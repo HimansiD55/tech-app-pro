@@ -1,0 +1,39 @@
+name: Deploy to EC2
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Login to DockerHub
+        run: echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+
+      - name: Build and Push Image
+        run: |
+          docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/my-web-app:latest .
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/my-web-app:latest
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH into EC2 and Run Container
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            # Pull the latest image
+            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/my-web-app:latest
+            # Stop and remove the old container if it exists
+            docker stop my-app || true
+            docker rm my-app || true
+            # Run the new container
+            docker run -d --name my-app -p 80:80 ${{ secrets.DOCKERHUB_USERNAME }}/my-web-app:latest
